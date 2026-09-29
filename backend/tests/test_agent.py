@@ -13,6 +13,7 @@ def test_agent_collects_capacity_and_does_not_reask_it():
     first = agent.greeting(state, "Commercial RO System")
     assert first.state.current_field in {"ro_capacity", "application"}
 
+    # If application is asked first, answer it and proceed to capacity.
     if first.state.current_field == "application":
         reply = run(agent.respond(first.state, "Drinking water for my hotel"))
         state = reply.state

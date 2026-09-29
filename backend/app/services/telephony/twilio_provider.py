@@ -45,6 +45,12 @@ def twilio_readiness() -> tuple[bool, list[str]]:
 
 
 def _trial_redirect_twiml(answer_url: str) -> str:
+    """Trial-safe inline TwiML: redirect an already-connected call to our app.
+
+    The outbound Create Call API on a Twilio trial only accepts Twilio's built-in
+    sample Voice URLs. Once the call is actually in progress, we switch it to
+    our FastAPI conversation using trial-supported custom TwiML.
+    """
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Response>'
@@ -54,6 +60,13 @@ def _trial_redirect_twiml(answer_url: str) -> str:
 
 
 class TwilioProvider:
+    """Twilio Voice REST adapter.
+
+    Trial accounts use Twilio's permitted Speech Recognition bootstrap URL for
+    Create Call, then a short status poller redirects the live call into our
+    custom FastAPI TwiML. Upgraded accounts use our answer webhook directly.
+    """
+
     def __init__(self) -> None:
         ready, reasons = twilio_readiness()
         if not ready:
@@ -69,6 +82,9 @@ class TwilioProvider:
         )
         trial = (settings.twilio_account_tier or "trial").lower() == "trial"
         if trial:
+            # Match the request produced by Twilio Console's working trial
+            # Speech Recognition test. Do not send custom Url/Method/Timeout
+            # parameters here because the trial Create Call endpoint restricts them.
             data = {
                 "To": phone_number,
                 "From": settings.twilio_from_number or "",
@@ -116,6 +132,13 @@ class TwilioProvider:
 
     @staticmethod
     async def get_call_status(call_sid: str) -> str | None:
+        """Read the provider's latest call status.
+
+        Twilio normally pushes lifecycle callbacks to our webhook, but a local
+        demo tunnel can briefly miss or delay a callback. The dashboard uses
+        this as a lightweight reconciliation path so an ended phone call never
+        remains visually stuck as active.
+        """
         if not call_sid or not settings.twilio_account_sid or not settings.twilio_auth_token:
             return None
         endpoint = (
@@ -132,9 +155,13 @@ class TwilioProvider:
                 status = str(response.json().get("status") or "").strip().lower()
                 return status or None
         except (httpx.HTTPError, ValueError):
+            # Reconciliation is best-effort. The webhook remains the primary
+            # source of truth and the UI should continue working if Twilio is
+            # temporarily unreachable.
             return None
 
     def _bootstrap_trial_call(self, call_sid: str, answer_url: str) -> None:
+        """Wait until a trial call is in progress, then switch it to our app."""
         endpoint = (
             "https://api.twilio.com/2010-04-01/Accounts/"
             f"{settings.twilio_account_sid}/Calls/{call_sid}.json"
@@ -163,4 +190,6 @@ class TwilioProvider:
                         return
                     time.sleep(1.0)
         except Exception:
+            # The status callback / call record captures the provider outcome.
+            # The browser fallback remains available if the trial blocks the live update.
             return

@@ -17,6 +17,8 @@ class CustomerCreate(BaseModel):
     @classmethod
     def validate_phone(cls, value: str) -> str:
         normalized = re.sub(r"[\s().-]", "", value.strip())
+        # Convenience for the India-based take-home demo: allow a normal 10-digit
+        # Indian mobile number and normalize it to E.164 automatically.
         if re.fullmatch(r"[6-9]\d{9}", normalized):
             normalized = "+91" + normalized
         elif re.fullmatch(r"0[6-9]\d{9}", normalized):

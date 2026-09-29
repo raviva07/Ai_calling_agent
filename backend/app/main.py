@@ -25,10 +25,13 @@ app.add_middleware(
 app.include_router(api_router)
 app.include_router(realtime_router)
 
+# The Twilio webhook router is always mounted so each call can choose either
+# real PSTN mode or the clearly labelled browser fallback at runtime.
 from .api.twilio_routes import router as twilio_router
 app.include_router(twilio_router)
 
 
 @app.on_event("startup")
 def create_tables_for_demo() -> None:
+    # For a take-home demo this makes first-run setup simple. Production should run migrations instead.
     Base.metadata.create_all(bind=engine)

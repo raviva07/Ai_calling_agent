@@ -67,6 +67,8 @@ class LLMClient:
             "max_tokens": max_tokens,
         }
         if json_mode:
+            # OpenRouter routes capability-constrained requests to models that can
+            # satisfy structured JSON output when using openrouter/free.
             payload["response_format"] = {"type": "json_object"}
 
         try:
@@ -129,6 +131,8 @@ class LLMClient:
         }
 
 
+# Backward-compatible alias so old imports/tests do not break if a reviewer checks
+# earlier code references. New code should use LLMClient.
 GeminiClient = LLMClient
 
 

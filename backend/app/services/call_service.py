@@ -66,6 +66,12 @@ async def finish_call(db: Session, call: CallSession, reason: str = "completed")
 
 
 async def reconcile_twilio_call(db: Session, call: CallSession) -> CallSession:
+    """Reconcile a live Twilio call with the provider when a callback was delayed.
+
+    Webhooks are still the primary lifecycle mechanism. This only runs for
+    records that look live and makes the interview/demo UI resilient to tunnel
+    hiccups, especially after the receiver hangs up.
+    """
     if call.ended_at or call.status not in LIVE_CALL_STATUSES:
         return call
     mode = str((call.agent_state or {}).get("call_mode") or "")

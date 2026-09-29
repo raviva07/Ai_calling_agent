@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     public_backend_url: str = "http://localhost:8000"
     calling_provider: str = "simulated"
 
+    # GenAI: OpenRouter free router by default.
     llm_provider: str = "openrouter"
     openrouter_api_key: str | None = None
     openrouter_model: str = "openrouter/free"
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     twilio_from_number: str | None = None
+    # "trial" uses a Twilio-approved outbound bootstrap and then switches the
+    # live call to our custom Gather/Say flow; "upgraded" uses our webhook directly.
     twilio_account_tier: str = "trial"
     twilio_voice_mode: str = "gather"
     twilio_relay_language: str = "en-IN"

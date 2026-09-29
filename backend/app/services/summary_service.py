@@ -27,6 +27,7 @@ Transcript: {transcript}"""
                 return merged, summary_text
         return deterministic, self._summary_text(state)
 
+
     @staticmethod
     def _normalize_bool(value: Any, default: bool) -> bool:
         if isinstance(value, bool):

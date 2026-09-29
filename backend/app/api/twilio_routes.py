@@ -50,6 +50,7 @@ def _public_ws_url(path: str) -> str:
 
 
 def _expected_twilio_signature(url: str, params: dict[str, str], auth_token: str) -> str:
+    # Twilio webhook signature: URL + sorted POST parameter names/values, HMAC-SHA1, base64.
     payload = url + "".join(f"{key}{params[key]}" for key in sorted(params))
     digest = hmac.new(auth_token.encode("utf-8"), payload.encode("utf-8"), hashlib.sha1).digest()
     return base64.b64encode(digest).decode("ascii")
@@ -95,10 +96,16 @@ def _reason_for_reply(reply) -> str:
     return reply.state.status or "completed"
 
 
+# -----------------------------
+# Twilio ConversationRelay mode
+# -----------------------------
+
 def _conversation_relay_twiml(greeting: str, call_id: str) -> str:
     relay_ws = _public_ws_url(f"/api/telephony/twilio/relay/{call_id}")
     action_url = _public_http_url(f"/api/telephony/twilio/relay-ended/{call_id}")
     lang = settings.twilio_relay_language or "en-IN"
+    # Raw XML keeps the app compatible even if a locally installed Twilio SDK predates
+    # ConversationRelay. ConversationRelay itself handles STT, TTS, barge-in and turn taking.
     return (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<Response>'
@@ -166,12 +173,14 @@ async def conversation_relay_socket(websocket: WebSocket, call_id: str):
                 continue
 
             if msg_type != "prompt":
+                # Speaker/token/debug events are useful operational telemetry but not customer turns.
                 if msg_type:
                     add_event(db, call.id, f"conversation_relay_{msg_type}"[:80], {
                         k: v for k, v in message.items() if k != "type"
                     })
                 continue
 
+            # ConversationRelay may emit partial prompts; act only on a final utterance.
             if message.get("last") is False:
                 continue
 
@@ -199,6 +208,9 @@ async def conversation_relay_socket(websocket: WebSocket, call_id: str):
             })
 
             if reply.should_end:
+                # Give the final sentence a moment to start/play before handing the session back.
+                # Final persistence is completed by relay-ended/status callback, so the real phone
+                # lifecycle—not the browser—decides when the call actually ended.
                 await asyncio.sleep(min(4.0, max(1.5, len(reply.text) / 35.0)))
                 await websocket.send_json({
                     "type": "end",
@@ -247,6 +259,10 @@ async def relay_ended(
         await finish_call(db, call, reason)
     return _xml(_hangup())
 
+
+# -----------------------------
+# Gather fallback mode
+# -----------------------------
 
 def _gather(prompt: str, call_id: str) -> str:
     action_url = _public_http_url(f"/api/telephony/twilio/respond/{call_id}")
@@ -363,6 +379,10 @@ async def status(
     normalized = CallStatus.lower()
     add_event(db, call.id, f"twilio_{normalized}"[:80], {"provider_call_id": CallSid})
 
+    # Twilio callbacks can occasionally arrive out of order. Once our record is
+    # terminal, never let a later callback revive it. If Twilio supplies its
+    # final billed/call duration after our own finish logic ran, keep that more
+    # authoritative duration without changing the already-terminal status.
     if call.ended_at:
         if CallDuration.isdigit() and normalized in {"completed", "busy", "failed", "no-answer", "canceled"}:
             call.duration_seconds = int(CallDuration)

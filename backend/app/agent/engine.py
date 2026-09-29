@@ -28,6 +28,9 @@ class CallingAgent:
         self.llm = llm or LLMClient()
 
     def initial_state(self, customer_name: str | None = None, company_name: str | None = None, purpose: str | None = None) -> AgentState:
+        # A generic campaign purpose such as "Product enquiry" is context, not the
+        # customer's actual requirement. Only seed requirement when purpose itself
+        # contains useful qualification detail.
         seeded_requirement = purpose.strip() if purpose and purpose.strip().lower() not in GENERIC_PURPOSES else None
         state = AgentState(customer_name=customer_name, company_name=company_name, requirement=seeded_requirement)
         self._refresh_completed(state)
@@ -150,6 +153,7 @@ If the user answers the currently asked field ({state.current_field}), prioritiz
             if key in FIELD_ORDER and value:
                 setattr(state, key, value)
 
+        # Heuristic requirement capture when the customer speaks freely.
         lower = raw_text.lower()
         if not state.requirement and any(k in lower for k in ("ro", "water purifier", "purification", "reverse osmosis")):
             state.requirement = raw_text
@@ -158,6 +162,7 @@ If the user answers the currently asked field ({state.current_field}), prioritiz
         state.completed_fields = [field for field in FIELD_ORDER if getattr(state, field, None)]
 
     def _next_field(self, state: AgentState) -> str | None:
+        # Required qualification data first, then useful optional data.
         for field in REQUIRED_FIELDS:
             if not getattr(state, field):
                 return field

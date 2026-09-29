@@ -159,6 +159,8 @@ async def list_calls(
         end = datetime.combine(call_date, time.max, tzinfo=timezone.utc)
         stmt = stmt.where(CallSession.created_at.between(start, end))
     calls = db.scalars(stmt).unique().all()
+    # Reconcile only currently-live Twilio records. This protects the UI from a
+    # delayed/missed callback without changing the primary webhook call flow.
     for call in calls[:10]:
         if call.status in LIVE_CALL_STATUSES and not call.ended_at:
             await reconcile_twilio_call(db, call)
